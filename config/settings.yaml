@@ -1,0 +1,163 @@
+# ============================================================================
+# OTONOM KARİYER ASİSTANI — MERKEZİ KONFİGÜRASYON (config/settings.yaml)
+# ============================================================================
+
+app:
+  name: "Otonom Kariyer Asistanı"
+  version: "1.0.0"
+  dry_run: true
+  schedule_time: "09:00"
+
+rag:
+  embedding_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  chroma_persist_dir: "data/chroma_db"
+  collection_name: "candidate_profile"
+  chunk_size: 600
+  chunk_overlap: 100
+  top_k: 4
+
+scraper:
+  timeout_ms: 20000
+  rate_limit_min_sec: 2.0
+  rate_limit_max_sec: 5.0
+  max_results_per_query: 10
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  target_subpages:
+    - "/kariyer"
+    - "/careers"
+    - "/career"
+    - "/hakkimizda"
+    - "/about"
+    - "/about-us"
+    - "/iletisim"
+    - "/contact"
+  blacklisted_domains:
+    - "clutch.co"
+    - "f6s.com"
+    - "europages.com"
+    - "europages.co.uk"
+    - "europages.com.tr"
+    - "linkedin.com"
+    - "kariyer.net"
+    - "glassdoor.com"
+    - "indeed.com"
+    - "sortlist.com"
+    - "yellowpages.com"
+    - "goodfirms.co"
+    - "crunchbase.com"
+    - "pitchbook.com"
+    - "ycombinator.com"
+    - "g2.com"
+    - "capterra.com"
+    - "trustpilot.com"
+    - "sikayetvar.com"
+    - "yenibiris.com"
+    - "eleman.net"
+    - "secretcv.com"
+    - "jooble.org"
+    - "kompass.com"
+    - "wikipedia.org"
+    - "youtube.com"
+    - "instagram.com"
+    - "facebook.com"
+    - "twitter.com"
+    - "x.com"
+    - "medium.com"
+  blacklisted_title_patterns:
+    - "top 10"
+    - "top 20"
+    - "top 50"
+    - "best robotics companies"
+    - "best companies"
+    - "b2b şirketleri"
+    - "şirket rehberi"
+    - "firma rehberi"
+    - "company directory"
+    - "list of companies"
+  blacklisted_email_prefixes:
+    - "support"
+    - "help"
+    - "destek"
+    - "sales"
+    - "satis"
+    - "marketing"
+    - "billing"
+    - "accounting"
+    - "muhasebe"
+    - "noreply"
+    - "no-reply"
+    - "admin"
+    - "webmaster"
+    - "press"
+    - "media"
+    - "legal"
+    - "privacy"
+    - "kvkk"
+    - "abuse"
+    - "security"
+  high_priority_email_prefixes:
+    - "kariyer"
+    - "career"
+    - "careers"
+    - "ik"
+    - "hr"
+    - "insankaynaklari"
+    - "humanresources"
+    - "talent"
+    - "talents"
+    - "jobs"
+    - "join"
+    - "recruiting"
+    - "recruitment"
+    - "people"
+    - "cv"
+    - "basvuru"
+  low_priority_email_prefixes:
+    - "info"
+    - "iletisim"
+    - "contact"
+    - "hello"
+    - "merhaba"
+    - "office"
+
+filter:
+  ats_domains:
+    - "greenhouse.io"
+    - "lever.co"
+    - "myworkdayjobs.com"
+    - "workday.com"
+    - "bamboohr.com"
+    - "workable.com"
+    - "smartrecruiters.com"
+    - "personio.de"
+    - "personio.com"
+    - "ashbyhq.com"
+    - "jobvite.com"
+    - "icims.com"
+    - "taleo.net"
+    - "successfactors.com"
+    - "recruitee.com"
+    - "breezy.hr"
+    - "jazzhr.com"
+    - "peoplise.com"
+
+generator:
+  gemini_model: "gemini-2.5-flash"
+  min_word_count: 60
+  max_word_count: 320
+  temperature: 0.4
+
+mailer:
+  daily_limit: 10
+  cooldown_days: 30
+  min_delay_sec: 15.0
+  max_delay_sec: 45.0
+
+database:
+  sqlite_path: "data/career_assistant.db"
+
+logging:
+  level: "INFO"
+  log_file: "logs/career_assistant.log"
+  max_bytes: 5242880
+  backup_count: 3
