@@ -1,8 +1,14 @@
 """Çok Dilli (Multilingual) Embedding Modülü — Singleton Pattern (src/rag/embedder.py).
 
-`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` modelini belleğe
-yalnızca bir kez (Thread-Safe Singleton) yükler ve Türkçe/İngilizce metinleri
-ortak semantik vektör uzayına dönüştürür.
+Bu modülün amacı:
+1. Türkçe ve İngilizce cümleleri aynı 384 boyutlu matematiksel vektör uzayına yerleştiren
+   `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` modelini yönetmek.
+2. **Singleton Tasarım Deseni (Design Pattern):** Derin öğrenme modeli ~470 MB boyutundadır ve
+   RAM'e yüklenmesi birkaç saniye sürer. Uygulama çalışırken her sorguda modeli tekrar tekrar
+   RAM'e yüklememek (bellek sızıntısı ve yavaşlığı önlemek) için model belleğe YALNIZCA BİR KEZ
+   yüklenir ve tüm modüller aynı örneği (`_instance`) paylaşır.
+3. **Bağımlılık Enjeksiyonu (Dependency Injection):** Birim testlerde internete çıkıp model
+   indirmemek için `model_loader` parametresiyle sahte (mock/fake) model enjekte edilebilir.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Varsayılan çok dilli (50+ dil, Türkçe ve İngilizce dahil) açık kaynak embedding modeli
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
@@ -23,7 +30,7 @@ class EmbeddingError(Exception):
 
 
 def _default_sentence_transformer_loader(model_name: str) -> Any:
-    """Varsayılan SentenceTransformer model yükleyicisi."""
+    """Gerçek çalışma zamanında `sentence_transformers.SentenceTransformer` modelini yükler."""
     try:
         from sentence_transformers import SentenceTransformer
 
@@ -33,8 +40,9 @@ def _default_sentence_transformer_loader(model_name: str) -> Any:
 
 
 class MultilingualEmbedder:
-    """Thread-safe Singleton yapısında çok dilli metin vektörleştirici."""
+    """Thread-safe (Çoklu iş parçacığı güvenli) Singleton yapısında çok dilli metin vektörleştirici."""
 
+    # Sınıf düzeyinde tekil örnek (Singleton) referansı ve eşzamanlılık kilidi (Lock)
     _instance: MultilingualEmbedder | None = None
     _lock: threading.Lock = threading.Lock()
 
@@ -47,6 +55,7 @@ class MultilingualEmbedder:
             raise EmbeddingError("Embedding model adı (model_name) boş olamaz.")
 
         self.model_name = model_name.strip()
+        # Eğer test için özel bir model_loader verilmemişse gerçek SentenceTransformer yükleyicisini kullan
         loader = model_loader or _default_sentence_transformer_loader
 
         try:
@@ -63,7 +72,13 @@ class MultilingualEmbedder:
         model_name: str = DEFAULT_EMBEDDING_MODEL,
         model_loader: Callable[[str], Any] | None = None,
     ) -> MultilingualEmbedder:
-        """Modeli belleğe yalnızca bir kez yükleyerek tekil (Singleton) örneği döndürür."""
+        """Modeli belleğe yalnızca bir kez yükleyerek tekil (Singleton) örneği döndürür.
+
+        Double-Checked Locking (Çift Kontrollü Kilitleme) Tekniği:
+        1. İlk `if cls._instance is None:` kontrolü kilit (`_lock`) almadan hızlıca bakar.
+        2. Eğer örnek henüz oluşturulmamışsa `with cls._lock:` ile diğer thread'leri bekletir ve
+           içeride ikinci kez kontrol edip modeli yalnızca tek bir kez oluşturur.
+        """
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -72,18 +87,22 @@ class MultilingualEmbedder:
 
     @classmethod
     def reset_instance(cls) -> None:
-        """Test izolasyonu için mevcut Singleton örneğini sıfırlar."""
+        """Birim testleri arasında temiz başlangıç yapabilmek için mevcut Singleton örneğini sıfırlar."""
         with cls._lock:
             cls._instance = None
 
     def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        """Verilen metin listesini normalize edilmiş float vektörlerine dönüştürür.
+        """Verilen metin listesini (batch) normalize edilmiş float vektörlerine dönüştürür.
+
+        Neden `normalize_embeddings=True` Kullanıyoruz?
+        Vektörlerin uzunluğu (L2 normu) 1.0'a normalize edildiğinde, ChromaDB'deki kosinüs
+        benzerliği (Cosine Similarity) hesabı çok daha hızlı ve matematiksel olarak kararlı çalışır.
 
         Args:
             texts: Vektörleştirilecek metin listesi.
 
         Returns:
-            Her metin için `list[float]` içeren 2B vektör listesi.
+            Her metin için `list[float]` içeren 2 boyutlu vektör listesi.
 
         Raises:
             EmbeddingError: Metinlerden biri boş/geçersiz olduğunda veya model hata verdiğinde.
@@ -91,6 +110,7 @@ class MultilingualEmbedder:
         if not texts:
             return []
 
+        # Girdi listesindeki her bir metnin geçerli ve dolu bir string olduğunu doğrula
         cleaned_texts: list[str] = []
         for idx, item in enumerate(texts):
             if not isinstance(item, str) or not item.strip():
@@ -102,14 +122,14 @@ class MultilingualEmbedder:
                 cleaned_texts,
                 normalize_embeddings=True,
             )
+            # Numpy dizilerini (ndarray) ChromaDB'nin doğrudan kabul ettiği standart Python float listesine çevir
             return [[float(val) for val in vec] for vec in raw_embeddings]
         except Exception as exc:
             raise EmbeddingError(f"Metin vektörleştirme hatası: {exc}") from exc
 
     def embed_query(self, query: str) -> list[float]:
-        """Tek bir arama sorgusunu vektörleştirir."""
+        """Tek bir arama sorgusunu (örn. şirket vizyonu veya soru) vektörleştirir."""
         if not isinstance(query, str) or not query.strip():
             raise EmbeddingError("Arama sorgusu (query) boş olamaz.")
         vectors = self.embed_texts([query.strip()])
         return vectors[0]
-

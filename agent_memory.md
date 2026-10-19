@@ -16,6 +16,7 @@
    - **Kırmızı Çizgi 2 (`support@` Kara Listesi):** `support@`, `help@`, `destek@`, `sales@`, `satis@`, `noreply@`, `no-reply@`, `admin@`, `billing@`, `kvkk@`, `privacy@`, `security@` gibi adresler **Kesin Kara Liste (Blacklist)** içindedir ve asla geçerli alıcı kabul edilmez. E-postalar 3 katmanlı sınıflandırılır (Kara Liste $\rightarrow$ Yüksek Öncelik İK/Kariyer $\rightarrow$ Düşük Öncelik Genel İletişim).
    - **Kırmızı Çizgi 3 (ROS 2 & Sistem İzolasyonu):** Tüm çalıştırma ve test süreçleri yerel `.venv` içinde ve `PYTHONPATH=""` sıfırlaması ile izole edilerek global ROS 2 `pytest` eklentilerinin çakışması engellenir.
 6. **Milestone Denetimi:** Her 4 fazın sonunda (Faz 4, 8, 12, 16) yeni özellik geliştirme durdurulur ve uçtan uca entegrasyon denetimi yapılır.
+7. **Açıklayıcı ve Zengin Yorum Satırı Kuralı:** Kullanıcının kodu okurken her adımı net anlayabilmesi için tüm modüllerde ve testlerde "ne yapıldığı" kadar "neden öyle yapıldığı" da adım adım Türkçe yorum satırlarıyla açıklanır.
 
 ---
 
@@ -28,7 +29,7 @@
 | **Faz 2** | PDF Metin Çıkarıcı ve Ön İşleme (PDF Loader) | `src/rag/pdf_loader.py`, `tests/test_pdf_loader.py` | ✅ Tamamlandı | 🟢 17/17 Geçti | `feat(rag): implement PDF text extractor with UTF-8 normalization` |
 | **Faz 3** | Metin Parçalama (Chunking) ve Metadata Zenginleştirme | `src/rag/chunker.py`, `tests/test_chunker.py` | ✅ Tamamlandı | 🟢 17/17 Geçti | `feat(rag): add semantic text chunker with language metadata support` |
 | **Faz 4** | Çok Dilli Embedding ve Kalıcı Vektör Veritabanı (ChromaDB) | `src/rag/embedder.py`, `src/rag/vector_store.py`, `tests/test_vector_store.py` | ✅ Tamamlandı | 🟢 8/8 Geçti | `feat(rag): integrate multilingual embeddings and persistent ChromaDB store` |
-| **🛡️ MILESTONE 1** | **Entegrasyon Denetimi (Faz 1 – 4 Kontrolü)** | `tests/integration/test_milestone_1_rag.py` | ⏳ Bekliyor | ⚪ Yazılmadı | `test(milestone-1): verify end-to-end RAG and config integration` |
+| **🛡️ MILESTONE 1** | **Entegrasyon Denetimi (Faz 1 – 4 Kontrolü)** | `tests/integration/test_milestone_1_rag.py` | ✅ Tamamlandı | 🟢 2/2 Geçti (Toplam: 65/65) | `test(milestone-1): verify end-to-end RAG and config integration` |
 | **Faz 5** | Dork Tabanlı Arama Sorgusu Üretici ve Arama Motoru İstemcisi | `src/scraper/query_builder.py`, `src/scraper/search_engine.py`, `tests/test_search_engine.py` | ⏳ Bekliyor | ⚪ Yazılmadı | `feat(scraper): implement dork query builder and resilient search engine client` |
 | **Faz 6** | Domain Kara Listesi ve Rehber Sitesi (Aggregator) Filtresi | `src/scraper/domain_filter.py`, `tests/test_domain_filter.py` | ⏳ Bekliyor | ⚪ Yazılmadı | `feat(scraper): add anti-aggregator domain and title blacklist filter` |
 | **Faz 7** | Playwright Headless Sayfa Çekici ve Hız Sınırlayıcı (Rate Limiter) | `src/scraper/page_fetcher.py`, `src/scraper/rate_limiter.py`, `tests/test_page_fetcher.py` | ⏳ Bekliyor | ⚪ Yazılmadı | `feat(scraper): implement async Playwright fetcher, language detector and rate limiter` |

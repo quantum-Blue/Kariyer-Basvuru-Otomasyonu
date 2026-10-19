@@ -1,9 +1,16 @@
 """Kalıcı Vektör Veritabanı Yöneticisi — ChromaDB (src/rag/vector_store.py).
 
-Parçalanmış CV/Portfolyo metinlerini (`TextChunk`) çok dilli embedding vektörleriyle
-birlikte yerel `ChromaDB` koleksiyonuna kaydeder, içerik özeti (SHA-256) tabanlı
-deterministik kimliklerle mükerrer (duplicate) kayıtları engeller ve çapraz dilli
-(TR <-> EN) semantik arama yapar.
+Bu modülün amacı:
+1. Faz 3'te parçalanan CV/Portfolyo metinlerini (`TextChunk`), Faz 4'teki `MultilingualEmbedder`
+   ile vektörleştirip disk üzerindeki kalıcı `ChromaDB` veritabanına kaydetmek.
+2. **Mükerrer Kayıt Önleme (Idempotent Upsert & SHA-256 Deduplication):**
+   Kullanıcı aynı CV PDF'ini sisteme 2 veya 10 kez yüklese bile veritabanında aynı metnin
+   kopyalarının birikmesini önlemek. Bunun için her parçaya `kaynak_adı + metin_içeriği`
+   üzerinden hesaplanan deterministik bir SHA-256 kimliği verilir ve `upsert` (varsa güncelle,
+   yoksa ekle) kullanılır.
+3. **Çapraz Dilli Semantik Arama (Cross-Lingual Semantic Search):**
+   Türkçe bir şirket için sorgu yapıldığında bile hem Türkçe CV'deki hem İngilizce portfolyodaki
+   en alakalı projeleri (örn. Fast-LIO2, RTAB-MAP, AUV, ROS 2) bulup getirmektir.
 """
 
 from __future__ import annotations
@@ -30,20 +37,23 @@ class VectorStoreError(Exception):
 
 @dataclass(frozen=True)
 class SearchResult:
-    """Semantik vektör sorgusundan dönen eşleşme modeli."""
+    """Semantik vektör sorgusundan dönen tek bir eşleşme sonucu."""
 
-    chunk_id: str
-    text: str
-    score: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    chunk_id: str                                      # Veritabanındaki benzersiz parça kimliği
+    text: str                                          # Eşleşen CV/Portfolyo metin parçası
+    score: float                                       # 0.0 ile 1.0 arası kosinüs benzerlik skoru (1.0 = tam eşleşme)
+    metadata: dict[str, Any] = field(default_factory=dict)  # Kaynak PDF adı, dil ('TR'/'EN') vb. bilgiler
 
 
 def _build_deterministic_chunk_id(chunk: TextChunk) -> str:
-    """Aynı PDF/kaynak ve aynı metin içeriği için her zaman aynı benzersiz ID'yi üretir.
+    """Aynı PDF/kaynak ve aynı metin içeriği için her zaman birebir aynı benzersiz ID'yi üretir.
 
-    Böylece aynı PDF farklı zamanlarda veya farklı `chunk_id` önekleriyle iki kez
-    yüklense bile ChromaDB `upsert` mekanizması kaydı üstüne yazar ve mükerrer
-    (duplicate) kayıt oluşmasını %100 engeller.
+    Nasıl Çalışır?
+    1. Metin içindeki fazla boşlukları standartlaştırır (`" ".join(chunk.text.strip().split())`).
+    2. Kaynak dosya adı (`source`) ile temiz metni birleştirip SHA-256 kriptografik özetini alır.
+    3. Böylece aynı PDF farklı zamanlarda veya farklı `chunk_id` isimleriyle tekrar yüklense bile
+       üretilen ID aynı kalır ve ChromaDB `upsert` işlemi mükerrer kayıt oluşturmak yerine mevcut
+       kaydın üzerine yazar.
     """
     source = str(chunk.metadata.get("source", "unknown")).strip() or "unknown"
     normalized_content = " ".join(chunk.text.strip().split())
@@ -52,7 +62,11 @@ def _build_deterministic_chunk_id(chunk: TextChunk) -> str:
 
 
 def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | bool]:
-    """ChromaDB'nin kabul ettiği ilkel tiplere (str, int, float, bool) göre metadata'yı temizler."""
+    """ChromaDB yalnızca ilkel veri tiplerini (`str`, `int`, `float`, `bool`) metadata olarak kabul eder.
+
+    Eğer metadata içinde `None` varsa siler; `Path` veya `list` gibi nesneler varsa `str`'ye çevirerek
+    ChromaDB'nin çalışma zamanında çökmesini engeller.
+    """
     sanitized: dict[str, str | int | float | bool] = {}
     for key, value in metadata.items():
         if value is None:
@@ -78,14 +92,17 @@ class VectorStoreManager:
 
         self.persist_directory = Path(persist_directory).resolve()
         self.collection_name = collection_name.strip()
+        # Dışarıdan özel bir embedder verilmemişse Singleton örneğini al
         self.embedder = embedder or MultilingualEmbedder.get_instance()
 
         try:
+            # Veritabanı dizinini oluştur ve telemetriyi kapatarak yerel istemciyi başlat
             self.persist_directory.mkdir(parents=True, exist_ok=True)
             self._client = chromadb.PersistentClient(
                 path=str(self.persist_directory),
                 settings=ChromaClientSettings(anonymized_telemetry=False),
             )
+            # Kosinüs benzerliği (cosine space) kullanan koleksiyonu aç veya yoksa oluştur
             self._collection = self._client.get_or_create_collection(
                 name=self.collection_name,
                 metadata={"hnsw:space": "cosine"},
@@ -105,11 +122,18 @@ class VectorStoreManager:
     def upsert_chunks(self, chunks: Sequence[TextChunk]) -> int:
         """Metin parçalarını mükerrer kayıt oluşturmadan (idempotent upsert) veritabanına yazar.
 
+        Adım Adım İşleyiş:
+        1. Gelen listedeki her öğenin geçerli ve dolu bir `TextChunk` olduğunu doğrular.
+        2. Her parça için deterministik SHA-256 kimliği (`det_id`) hesaplar.
+        3. `deduped_by_id` sözlüğü kullanarak aynı çağrı (batch) içinde bile birebir aynı iki
+           cümle varsa bunları teke indirir (ChromaDB `DuplicateIDError` hatasını önler).
+        4. Metinleri `self.embedder.embed_texts` ile vektörleştirir ve `collection.upsert` ile kaydeder.
+
         Args:
             chunks: Kaydedilecek `TextChunk` listesi.
 
         Returns:
-            İşlenen benzersiz parça sayısı.
+            Veritabanına işlenen benzersiz parça sayısı.
 
         Raises:
             VectorStoreError: Geçersiz girdi veya veritabanı yazma hatasında.
@@ -117,6 +141,7 @@ class VectorStoreManager:
         if not chunks:
             return 0
 
+        # Batch içi tekilleştirme (aynı ID'ye sahip iki parça gelirse sonuncusunu tutar)
         deduped_by_id: dict[str, TextChunk] = {}
         for idx, chunk in enumerate(chunks):
             if not isinstance(chunk, TextChunk):
@@ -158,13 +183,20 @@ class VectorStoreManager:
     ) -> list[SearchResult]:
         """Verilen sorgu metnine en yakın CV/Portfolyo parçalarını semantik olarak getirir.
 
+        Nasıl Çalışır?
+        1. Koleksiyon boşsa ChromaDB'yi yormadan doğrudan `[]` döndürür.
+        2. İstenen `top_k` sayısı koleksiyondaki mevcut kayıt sayısından büyükse, ChromaDB'nin
+           uyarı/hata vermemesi için `n_results = min(top_k, total_items)` olarak sınırlar.
+        3. Sorgu metnini vektörleştirir ve kosinüs uzaklıklarını (`distances`) alır.
+        4. Uzaklık değerini `1.0 - distance` formülüyle anlaşılır benzerlik skoruna çevirir.
+
         Args:
             query_text: Aranacak soru, teknoloji veya şirket misyonu metni.
             top_k: Döndürülecek maksimum eşleşme sayısı.
-            language: Opsiyonel dil filtresi ('TR' veya 'EN'). None ise tüm dillerde arar.
+            language: Opsiyonel dil filtresi ('TR' veya 'EN'). None ise tüm dillerde ortak arar.
 
         Returns:
-            Benzerlik sırasına göre `SearchResult` listesi.
+            En yüksek benzerlikten düşüğe sıralı `SearchResult` listesi.
         """
         if not isinstance(query_text, str) or not query_text.strip():
             raise VectorStoreError("Sorgu metni (query_text) boş olamaz.")
@@ -175,6 +207,7 @@ class VectorStoreManager:
         if total_items == 0:
             return []
 
+        # Koleksiyonda 2 kayıt varken top_k=10 istenirse üst sınırı 2'ye çek
         n_results = min(top_k, total_items)
         where_filter: dict[str, Any] | None = None
         if language is not None:
@@ -196,6 +229,7 @@ class VectorStoreManager:
         except Exception as exc:
             raise VectorStoreError(f"ChromaDB sorgu hatası: {exc}") from exc
 
+        # ChromaDB sonuçları çift katmanlı liste (batch formatı) olarak döndürür; ilk sorgunun sonuçlarını al
         ids_list = (raw.get("ids") or [[]])[0]
         docs_list = (raw.get("documents") or [[]])[0]
         metas_list = (raw.get("metadatas") or [[]])[0]
@@ -203,7 +237,7 @@ class VectorStoreManager:
 
         results: list[SearchResult] = []
         for cid, doc, meta, dist in zip(ids_list, docs_list, metas_list, dists_list):
-            # Cosine distance -> benzerlik skoru (1.0 - distance)
+            # Kosinüs uzaklığını (0 = aynı yön) benzerlik skoruna (1.0 = en yüksek benzerlik) dönüştür
             similarity = round(max(0.0, 1.0 - float(dist)), 4)
             results.append(
                 SearchResult(
@@ -215,4 +249,3 @@ class VectorStoreManager:
             )
 
         return results
-
