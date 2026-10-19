@@ -113,12 +113,14 @@ class ScraperSectionConfig(BaseModel):
             "indeed.com",
             "sortlist.com",
             "yellowpages.com",
+            "hiringcafe.com",
         ]
     )
     blacklisted_title_patterns: list[str] = Field(
         default_factory=lambda: [
             "top 10",
             "top 20",
+            "top 30",
             "best robotics companies",
             "b2b şirketleri",
             "şirket rehberi",
@@ -390,3 +392,4 @@ def load_settings(
         return AppSettings(**parsed_yaml)
     except ValidationError as exc:
         raise ConfigurationError(f"Konfigürasyon şema doğrulama hatası ({yaml_file}): {exc}") from exc
+

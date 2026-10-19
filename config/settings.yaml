@@ -161,3 +161,4 @@ logging:
   log_file: "logs/career_assistant.log"
   max_bytes: 5242880
   backup_count: 3
+

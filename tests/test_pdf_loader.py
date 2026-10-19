@@ -168,3 +168,4 @@ class TestPDFLoaderTDDAndBugHunting:
         assert "\r" not in cleaned
         assert "\n\n\n" not in cleaned
         assert normalize_pdf_text("") == ""
+

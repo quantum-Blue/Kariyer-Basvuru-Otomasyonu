@@ -291,3 +291,4 @@ def chunk_pdf_document(
         chunk_overlap=chunk_overlap,
         extra_metadata={"page_count": document.page_count},
     )
+

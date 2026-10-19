@@ -209,3 +209,4 @@ class TestTextChunkerTDDAndBugHunting:
 
         with pytest.raises(ChunkingError):
             chunk_pdf_document("not_a_pdf_document")  # type: ignore[arg-type]
+

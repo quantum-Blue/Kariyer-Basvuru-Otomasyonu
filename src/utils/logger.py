@@ -125,3 +125,4 @@ def get_logger(name: str = "career_assistant") -> logging.Logger:
     if not logger.handlers:
         return setup_logging(logger_name=name)
     return logger
+

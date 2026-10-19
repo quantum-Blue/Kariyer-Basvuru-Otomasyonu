@@ -48,9 +48,11 @@ logs/
 data/cvs/*.pdf
 
 # IDE ve İşletim Sistemi Dosyaları
+.history/
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+

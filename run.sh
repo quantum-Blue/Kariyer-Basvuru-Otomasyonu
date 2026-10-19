@@ -22,3 +22,4 @@ else
 fi
 
 exec "$PYTHON_BIN" main.py "$@"
+
