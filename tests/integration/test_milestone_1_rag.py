@@ -301,3 +301,73 @@ class TestMilestone1EndToEndRAG:
 
         # Kriter 4: Tüm 5 döngülük uçtan uca akış 5 saniyenin altında tamamlanmalı
         assert elapsed_sec < 5.0
+
+    def test_real_workspace_cv_and_portfolio_pdfs_end_to_end(
+        self, tmp_path: Path
+    ) -> None:
+        """Çalışma dizinindeki gerçek `cv/` ve `portfolio/` klasörlerindeki PDF belgelerinin
+        (01_Muhammed_Enes_BAL_CV_TR.pdf, 01_Muhammed_Enes_BAL_CV_EN_1.pdf, 01_Muhammed_Enes_BAL_Portfolyo.pdf)
+        okunması, doğru dille (TR / EN) parçalanması ve ChromaDB'de sorgulanması testi.
+        """
+        project_root = Path(__file__).resolve().parent.parent.parent
+        real_tr_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_TR.pdf"
+        real_en_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_EN_1.pdf"
+        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
+
+        if not (real_tr_cv.exists() and real_en_cv.exists() and real_portfolio.exists()):
+            pytest.skip("Gerçek CV/Portfolyo PDF dosyaları dizinde bulunamadı.")
+
+        # 1. Gerçek PDF'leri PyMuPDF ile oku
+        doc_tr = extract_text_from_pdf(real_tr_cv)
+        doc_en = extract_text_from_pdf(real_en_cv)
+        doc_port = extract_text_from_pdf(real_portfolio)
+
+        assert doc_tr.page_count >= 1
+        assert doc_en.page_count >= 1
+        assert doc_port.page_count == 20
+        assert "MUHAMMED ENES BAL" in doc_tr.text
+        assert "Robotics and Autonomous Systems Engineer" in doc_en.text
+        assert "T E K N İ K P O R T F O L Y O" in doc_port.text
+
+        # 2. Gerçek PDF'leri parçala (Chunking) ve dillerinin doğru tespit edildiğini doğrula
+        # Not: İngilizce CV içinde 'TÜBİTAK' gibi Türkçe özel isimler geçmesine rağmen 'EN' olarak tespit edilmeli!
+        chunks_tr = chunk_pdf_document(doc_tr, chunk_size=600, chunk_overlap=100)
+        chunks_en = chunk_pdf_document(doc_en, chunk_size=600, chunk_overlap=100)
+        chunks_port = chunk_pdf_document(doc_port, chunk_size=600, chunk_overlap=100)
+
+        assert len(chunks_tr) >= 5
+        assert len(chunks_en) >= 5
+        assert len(chunks_port) >= 20
+        assert chunks_tr[0].metadata["language"] == "TR"
+        assert chunks_en[0].metadata["language"] == "EN"
+        assert chunks_port[0].metadata["language"] == "TR"
+
+        # 3. Tüm gerçek parçaları (toplam ~45 parça) ChromaDB'ye kaydet ve sorgula
+        embedder = MultilingualEmbedder.get_instance(
+            model_loader=lambda _: MilestoneSemanticBackend()
+        )
+        store = VectorStoreManager(
+            persist_directory=tmp_path / "chroma_real_docs",
+            collection_name="real_candidate_profile",
+            embedder=embedder,
+        )
+
+        all_real_chunks = chunks_tr + chunks_en + chunks_port
+        inserted_count = store.upsert_chunks(all_real_chunks)
+        assert inserted_count == store.count()
+        assert inserted_count >= 35
+
+        # İkinci kez yüklendiğinde mükerrer (duplicate) oluşmamalı
+        store.upsert_chunks(all_real_chunks)
+        assert store.count() == inserted_count
+
+        # 4. Hem Türkçe hem İngilizce belgeler üzerinden semantik sorgulama yap
+        slam_hits = store.query("Fast-LIO2 RTAB-MAP SLAM 3B haritalama", top_k=5)
+        assert len(slam_hits) == 5
+        assert any("SLAM" in r.text or "Fast-LIO2" in r.text for r in slam_hits)
+
+        en_only_hits = store.query("autonomous quadrotor UAV", top_k=3, language="EN")
+        assert len(en_only_hits) == 3
+        assert all(r.metadata["language"] == "EN" for r in en_only_hits)
+
+

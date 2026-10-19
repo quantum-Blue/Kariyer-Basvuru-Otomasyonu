@@ -89,9 +89,12 @@ class TextChunk:
 def detect_language(text: str) -> str:
     """Metnin dilini deterministik bir puanlama algoritmasıyla 'TR' veya 'EN' olarak tespit eder.
 
-    Nasıl Çalışır?
-    1. Metinde `ğ, Ğ, ş, Ş, ı, İ` gibi sadece Türkçeye özgü harflerden en az 2 tane varsa doğrudan 'TR' döner.
-    2. Yoksa Türkçe bağlaç/terim sayısı ile İngilizce bağlaç/terim sayısını ağırlıklı olarak karşılaştırır.
+    Neden Doğrudan '2 Türkçe Harf Varsa TR' Demiyoruz?
+    İngilizce hazırlanan bir CV'de de 'TÜBİTAK', 'İstanbul', 'Boğaziçi' gibi özel isimler
+    geçebilir (örneğin gerçek `01_Muhammed_Enes_BAL_CV_EN_1.pdf` dosyasında 'TÜBİTAK' kelimesinden
+    ötürü 3 adet 'İ' harfi bulunur). Eğer sadece harf sayısına bakıp erken çıkarsak İngilizce CV
+    yanlışlıkla 'TR' olarak etiketlenir. Bu yüzden hem Türkçe özel harfleri hem de metindeki
+    Türkçe ve İngilizce anahtar kelime yoğunluğunu birlikte puanlayıp karşılaştırıyoruz.
 
     Args:
         text: Analiz edilecek metin.
@@ -103,17 +106,16 @@ def detect_language(text: str) -> str:
         return "EN"
 
     unique_tr_count = sum(1 for ch in text if ch in _TURKISH_UNIQUE_CHARS)
-    if unique_tr_count >= 2:
-        return "TR"
-
     extended_tr_count = sum(1 for ch in text if ch in _TURKISH_EXTENDED_CHARS)
     tokens = re.findall(r"\b\w+\b", text.lower())
     tr_word_hits = sum(1 for token in tokens if token in _TURKISH_KEYWORDS)
     en_word_hits = sum(1 for token in tokens if token in _ENGLISH_KEYWORDS)
 
-    # Ağırlıklı skor hesabı
-    tr_score = (unique_tr_count * 3) + extended_tr_count + (tr_word_hits * 2)
-    en_score = en_word_hits * 2
+    # Ağırlıklı skor hesabı:
+    # İngilizce kelimeler yoğunlukta ise (örn. İngilizce CV içindeki tekil TÜBİTAK özel ismi),
+    # en_score baskın çıkar ve doğru şekilde 'EN' döner.
+    tr_score = (unique_tr_count * 2) + extended_tr_count + (tr_word_hits * 4)
+    en_score = en_word_hits * 4
 
     if tr_score > en_score and tr_score > 0:
         return "TR"

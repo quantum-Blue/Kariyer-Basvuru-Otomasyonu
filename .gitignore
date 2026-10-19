@@ -46,6 +46,8 @@ logs/
 
 # Kişisel CV/Portfolyo PDF Belgeleri (Gizlilik Koruması)
 data/cvs/*.pdf
+cv/*.pdf
+portfolio/*.pdf
 
 # IDE ve İşletim Sistemi Dosyaları
 .history/
