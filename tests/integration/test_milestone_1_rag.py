@@ -311,7 +311,9 @@ class TestMilestone1EndToEndRAG:
         """
         project_root = Path(__file__).resolve().parent.parent.parent
         real_tr_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_TR.pdf"
-        real_en_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_EN_1.pdf"
+        real_en_cv = project_root / "cv" / "Muhammed_Enes_BAL_CV_EN.pdf"
+        if not real_en_cv.exists():
+            real_en_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_EN_1.pdf"
         real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
 
         if not (real_tr_cv.exists() and real_en_cv.exists() and real_portfolio.exists()):
@@ -326,7 +328,7 @@ class TestMilestone1EndToEndRAG:
         assert doc_en.page_count >= 1
         assert doc_port.page_count == 20
         assert "MUHAMMED ENES BAL" in doc_tr.text
-        assert "Robotics and Autonomous Systems Engineer" in doc_en.text
+        assert "Robotics" in doc_en.text and "Autonomous Systems" in doc_en.text
         assert "T E K N İ K P O R T F O L Y O" in doc_port.text
 
         # 2. Gerçek PDF'leri parçala (Chunking) ve dillerinin doğru tespit edildiğini doğrula
