@@ -42,7 +42,7 @@
 | **🛡️ MILESTONE 3** | **Entegrasyon Denetimi (Faz 1 – 12 Kontrolü)** | `tests/integration/test_milestone_3_intelligence.py` | ✅ Tamamlandı | 🟢 2/2 Geçti (Toplam: 279/279) | `test(milestone-3): verify decision tree, LLM generation and DB cooldown integration` |
 | **Faz 13** | Güvenli SMTP Gönderici, Kota Kontrolü ve DRY-RUN Simülatörü | `src/mailer/email_sender.py`, `tests/test_email_sender.py` | ✅ Tamamlandı | 🟢 9/9 Geçti (Toplam: 288/288) | `feat(mailer): implement SMTP SSL sender with daily quota and dry-run protection` |
 | **Faz 14** | Hata İzolasyonlu Ana Orkestratör (Pipeline Engine) | `src/orchestrator/pipeline.py`, `tests/test_pipeline.py` | ✅ Tamamlandı | 🟢 3/3 Geçti (Toplam: 291/291) | `feat(orchestrator): build fault-tolerant end-to-end execution pipeline` |
-| **Faz 15** | Zengin CLI Arayüzü (`argparse` + `rich`) ve Raporlama | `src/cli/interface.py`, `main.py`, `tests/test_cli.py` | ⏳ Bekliyor | ⚪ Yazılmadı | `feat(cli): implement rich terminal dashboard and CLI argument parser` |
+| **Faz 15** | Zengin CLI Arayüzü (`argparse` + `rich`) ve Raporlama | `src/cli/interface.py`, `main.py`, `tests/test_cli.py` | ✅ Tamamlandı | 🟢 11/11 Geçti (Toplam: 302/302) | `feat(cli): implement rich terminal dashboard and CLI argument parser` |
 | **Faz 16** | Zamanlayıcı (Scheduler) ve Son Kullanıcı Dokümantasyonu | `src/orchestrator/scheduler.py`, `README.md`, `tests/test_scheduler.py` | ⏳ Bekliyor | ⚪ Yazılmadı | `feat(scheduler): add daily autonomous execution daemon and complete README` |
 | **🏆 MILESTONE 4** | **Tam Sistem Kabul ve Canlı DRY-RUN Denetimi (Faz 1 – 16)** | Tüm Birim + Entegrasyon Testleri & Canlı `DRY-RUN` | ⏳ Bekliyor | ⚪ Yazılmadı | `release(v1.0.0): pass final system audit and complete autonomous career assistant` |
 
