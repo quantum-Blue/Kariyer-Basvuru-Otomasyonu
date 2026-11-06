@@ -420,3 +420,4 @@ def run_cli(
     )
     render_pipeline_summary(summary, out_console)
     return 0
+

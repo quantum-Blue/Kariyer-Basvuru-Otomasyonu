@@ -214,3 +214,4 @@ class TestCLIArgumentParserAndRichDashboardTDDAndBugHunting:
         assert "kariyer@baykar-otonom.example.tr" in output
         assert "Skydio Global" in output
         assert "DRY_RUN" in output
+

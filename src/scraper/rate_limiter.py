@@ -74,3 +74,4 @@ class RateLimiter:
     def reset(self) -> None:
         """İstek sayacını sıfırlar."""
         self._request_count = 0
+

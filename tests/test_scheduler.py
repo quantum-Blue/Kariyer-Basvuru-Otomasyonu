@@ -140,3 +140,4 @@ class TestAutonomousSchedulerTDDAndBugHunting:
         assert call_count == 2
         assert scheduler.error_count == 1
         assert scheduler.success_count == 1
+

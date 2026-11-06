@@ -322,3 +322,4 @@ class TestSafeSMTPSenderQuotaAndDryRunTDDAndBugHunting:
         )
         assert bad_recipient.outcome == SendOutcome.INVALID_RECIPIENT
         assert smtp_calls == 1
+

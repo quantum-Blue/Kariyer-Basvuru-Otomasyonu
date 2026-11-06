@@ -176,3 +176,4 @@ def build_dork_queries(
         raise QueryBuildError("Geçerli hiçbir arama anahtar kelimesi (keywords) bulunamadı.")
 
     return queries
+

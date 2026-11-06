@@ -440,3 +440,4 @@ class EmailExtractor:
         """Şirket için en uygun tekil e-postayı (önce İK, yoksa genel iletişim, hiçbiri yoksa None) seçer."""
         candidates = self.extract(content=content, links=links)
         return candidates[0] if candidates else None
+

@@ -282,3 +282,4 @@ class TestSQLiteDatabaseAndCooldownEngineTDDAndBugHunting:
         db.close()
         db_file.unlink()
         assert not db_file.exists()
+

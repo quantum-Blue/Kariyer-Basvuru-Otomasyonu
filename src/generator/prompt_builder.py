@@ -299,3 +299,4 @@ class PromptBuilder:
             max_word_count=self.max_word_count,
             max_company_context_chars=self.max_company_context_chars,
         )
+

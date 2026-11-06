@@ -325,3 +325,4 @@ class PlaywrightPageFetcher:
             all_links=all_links,
             pages=successful_pages,
         )
+

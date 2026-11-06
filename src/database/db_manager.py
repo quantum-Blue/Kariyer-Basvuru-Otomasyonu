@@ -515,3 +515,4 @@ class DatabaseManager:
     def close(self) -> None:
         """Bağlantılar her işlem sonunda otomatik kapatıldığı için uyumluluk amaçlı no-op metot."""
         return None
+

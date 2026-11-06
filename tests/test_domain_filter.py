@@ -166,3 +166,4 @@ class TestAntiAggregatorDomainFilter:
         assert is_blacklisted_url("") is True
         assert is_blacklisted_url("javascript:alert(1)") is True
         assert is_blacklisted_url("mailto:support@f6s.com") is True
+

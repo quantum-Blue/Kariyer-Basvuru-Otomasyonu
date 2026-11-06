@@ -306,3 +306,4 @@ class TestFaultTolerantPipelineOrchestratorTDDAndBugHunting:
         assert summary.dry_run_count == 2
         assert len(dummy_fetcher.fetched_urls) == 2
         assert len(summary.company_reports) == 2
+

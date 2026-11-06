@@ -347,3 +347,4 @@ class EmailSender:
                 error_message=err_str,
                 delay_applied_sec=applied_delay,
             )
+

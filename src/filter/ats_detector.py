@@ -231,3 +231,4 @@ class ATSDetector:
             html_content=html_content,
             ats_domains=self.ats_domains,
         )
+

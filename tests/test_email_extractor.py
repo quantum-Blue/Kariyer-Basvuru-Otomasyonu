@@ -226,3 +226,4 @@ class TestEmailCleaningAndExtraction:
             "Sadece destek: support@f6s.com ve noreply@f6s.com"
         )
         assert none_when_only_blacklist is None
+

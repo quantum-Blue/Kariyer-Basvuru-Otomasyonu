@@ -114,3 +114,4 @@ class AutonomousScheduler:
             if max_iterations is not None and iterations >= max_iterations:
                 break
             self._sleep_func(self.poll_interval_sec)
+

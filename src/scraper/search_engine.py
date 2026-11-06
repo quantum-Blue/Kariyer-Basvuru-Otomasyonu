@@ -161,3 +161,4 @@ class SearchEngineClient:
                     combined.append(item)
 
         return combined
+
