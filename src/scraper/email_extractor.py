@@ -90,6 +90,17 @@ DEFAULT_BLACKLISTED_EMAIL_PREFIXES: tuple[str, ...] = (
     "unsubscribe",
     "newsletter",
     "bulten",
+    "ombudsman",
+    "editor",
+    "haber",
+    "reklam",
+    "advertising",
+    "sikayet",
+    "complaint",
+    "etik",
+    "ethics",
+    "dpo",
+    "compliance",
 )
 
 # Katman 2: BİRİNCİL HEDEF (YÜKSEK ÖNCELİK — İK VE KARİYER)
@@ -268,8 +279,8 @@ def classify_email_address(
 
     # 2. Sahte/örnek domain veya Sentry hash kontrolü
     if domain in _FAKE_OR_TELEMETRY_DOMAINS and (
-        local_part in {"test", "yourname", "user", "name", "email"}
-        or domain in {"example.com", "example.org", "domain.com", "yourdomain.com", "sentry.io", "wixpress.com"}
+        local_part in {"test", "yourname", "user", "name", "email", "some"}
+        or domain in {"example.com", "example.org", "domain.com", "yourdomain.com", "email.com", "sentry.io", "wixpress.com"}
     ):
         return EmailTier.BLACKLISTED
 

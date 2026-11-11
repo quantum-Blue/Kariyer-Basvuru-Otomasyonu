@@ -14,10 +14,15 @@ Bu modülün amacı:
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import os
 import threading
 from typing import Any
 
 from src.utils.logger import get_logger
+
+# Windows üzerinde HuggingFace symlink uyarılarının terminali kirletmesini önle
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 logger = get_logger(__name__)
 

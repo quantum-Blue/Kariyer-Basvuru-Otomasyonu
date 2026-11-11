@@ -132,6 +132,68 @@ def _normalize_base_origin(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+_GENERIC_TITLE_SEGMENTS: frozenset[str] = frozenset(
+    {
+        "home",
+        "home page",
+        "homepage",
+        "anasayfa",
+        "ana sayfa",
+        "kariyer",
+        "careers",
+        "career",
+        "hakkımızda",
+        "hakkimizda",
+        "about",
+        "about us",
+        "iletişim",
+        "iletisim",
+        "contact",
+        "contact us",
+        "welcome",
+        "hoşgeldiniz",
+        "hosgeldiniz",
+        "teknoloji",
+        "technology",
+        "ürünler",
+        "products",
+    }
+)
+
+
+def _extract_clean_company_name(raw_title: str, origin: str) -> str:
+    """Sayfa başlığından ('Autonomous Mobile Robots | Rovion Robotics' veya 'TEKNOLOJİ – Phobos')
+    jenerik sekme kelimelerini atlayıp alan adı köküyle (domain stem) örtüşen gerçek şirket adını çıkarır.
+    """
+    fallback_host = urlparse(origin).netloc.removeprefix("www.")
+    if not raw_title or not raw_title.strip():
+        return fallback_host
+
+    parts = [p.strip() for p in re.split(r"\s*[|\-–—•:]\s*", raw_title) if p.strip()]
+    if not parts:
+        return fallback_host
+
+    # 1. Öncelik: Alan adı köküyle (örn. 'rovionrobotics' -> 'rovion', 'phobosrobotics' -> 'phobos')
+    #    örtüşen başlık parçasını seç (Örn: 'Autonomous Mobile Robots | Rovion Robotics' -> 'Rovion Robotics')
+    domain_stem = fallback_host.split(".")[0].lower()
+    for remove_suffix in ("robotics", "robotik", "teknoloji", "tech", "otomasyon"):
+        if domain_stem.endswith(remove_suffix) and len(domain_stem) > len(remove_suffix) + 2:
+            domain_stem = domain_stem[: -len(remove_suffix)]
+            break
+
+    if len(domain_stem) >= 3:
+        for part in parts:
+            if part.lower() not in _GENERIC_TITLE_SEGMENTS and domain_stem in part.lower():
+                return part
+
+    # 2. Öncelik: Jenerik olmayan ilk anlamlı başlık parçasını seç
+    for part in parts:
+        if part.lower() not in _GENERIC_TITLE_SEGMENTS and len(part) >= 2:
+            return part
+
+    return parts[0] if parts else fallback_host
+
+
 class PlaywrightPageFetcher:
     """Playwright tabanlı, hız sınırlayıcılı ve zombie process korumalı asenkron sayfa çekici."""
 
@@ -308,9 +370,9 @@ class PlaywrightPageFetcher:
 
         # Şirket adını ilk başarılı sayfanın başlığından veya alan adından çıkar
         company_name = (
-            successful_pages[0].title.split("|")[0].split("-")[0].strip()
+            _extract_clean_company_name(successful_pages[0].title, origin)
             if successful_pages and successful_pages[0].title
-            else urlparse(origin).netloc
+            else urlparse(origin).netloc.removeprefix("www.")
         )
 
         # Şirketin dilini ('TR' veya 'EN') birleşik metin üzerinden tespit et

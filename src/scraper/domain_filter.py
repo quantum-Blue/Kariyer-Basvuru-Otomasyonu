@@ -26,7 +26,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Varsayılan kapsamlı B2B rehber, iş ilanı, sosyal medya ve sözlük/ansiklopedi kara listesi
+# Varsayılan kapsamlı B2B rehber, iş ilanı, sosyal medya, eğitim/akademi ve sözlük/ansiklopedi kara listesi
 DEFAULT_BLACKLISTED_DOMAINS: tuple[str, ...] = (
     "clutch.co",
     "f6s.com",
@@ -37,6 +37,8 @@ DEFAULT_BLACKLISTED_DOMAINS: tuple[str, ...] = (
     "europages.fr",
     "linkedin.com",
     "kariyer.net",
+    "techcareer.net",
+    "kolaystartup.com",
     "glassdoor.com",
     "indeed.com",
     "sortlist.com",
@@ -60,11 +62,95 @@ DEFAULT_BLACKLISTED_DOMAINS: tuple[str, ...] = (
     "facebook.com",
     "twitter.com",
     "x.com",
+    "tiktok.com",
     "medium.com",
     "reddit.com",
     "quora.com",
+    "zhihu.com",
     "github.com",
     "gitlab.com",
+    "bitbucket.org",
+    "sourceforge.net",
+    "stackoverflow.com",
+    "stackexchange.com",
+    "ros.org",
+    "rosturkiye.com",
+    "turkishrobotics.org",
+    "readthedocs.io",
+    "udemy.com",
+    "coursera.org",
+    "edx.org",
+    "arxiv.org",
+    "researchgate.net",
+    "ieee.org",
+    "sciencedirect.com",
+    "springer.com",
+    "mdpi.com",
+    "huggingface.co",
+    "kaggle.com",
+    "google.com",
+    "microsoft.com",
+    "apple.com",
+    "ros.ie",
+    "roslegacy.net",
+    "rosinfinity.com",
+    "rosorigin.com",
+    "tecnoloblog.com",
+    "teknofest.org",
+    "robotlar.org",
+    "aa.com.tr",
+    "trthaber.com",
+    "trt.net.tr",
+    "hurriyet.com.tr",
+    "milliyet.com.tr",
+    "sabah.com.tr",
+    "haberturk.com",
+    "ntv.com.tr",
+    "sozcu.com.tr",
+    "cumhuriyet.com.tr",
+    "ekonomim.com",
+    "paradergi.com.tr",
+    "dunya.com",
+    "bloomberght.com",
+    "forbes.com.tr",
+    "webrazzi.com",
+    "egirisim.com",
+    "turkeyai.com",
+    "shiftdelete.net",
+    "webtekno.com",
+    "donanimhaber.com",
+    "teknoblog.com",
+    "find.com.tr",
+    "firmasec.com",
+    "bulurum.com",
+    "yellowpages.com.tr",
+    "robotistan.com",
+    "direnc.net",
+    "robolinkmarket.com",
+    "roboshop.com.tr",
+    "360teknoloji.com",
+    "endustri.io",
+    "unirehberi.com",
+    "turcademy.com",
+    "gurmas.com.tr",
+    "edu.tr",
+    "gov.tr",
+    "k12.tr",
+    "org.tr",
+    "bel.tr",
+)
+
+# Ticari Ar-Ge şirketi olmayan (kamu, üniversite, dernek/vakıf) üst seviye alan adı uzantıları
+_NON_CORPORATE_TLD_SUFFIXES: tuple[str, ...] = (
+    ".org.tr",
+    ".edu",
+    ".edu.tr",
+    ".gov",
+    ".gov.tr",
+    ".k12.tr",
+    ".bel.tr",
+    ".mil",
+    ".ac.uk",
 )
 
 # Varsayılan rehber/liste başlığı alt dizgeleri (küçük harf)
@@ -81,6 +167,11 @@ DEFAULT_BLACKLISTED_TITLE_PATTERNS: tuple[str, ...] = (
     "firma rehberi",
     "company directory",
     "list of companies",
+    "şirketler listesi",
+    "firmalar listesi",
+    "firmalar (şirketler) listesi",
+    "taban puanları",
+    "yayın portalı",
 )
 
 # "Top 15 ...", "20 Best ... Companies", "En İyi 10 ... Şirketi", "List of ... Companies"
@@ -186,6 +277,11 @@ def is_blacklisted_url(
     if not host:
         return True
 
+    # Ticari şirket olmayan vakıf/dernek/üniversite/kamu (.org, .edu, .gov vb.) uzantılarını ele
+    if host.endswith(_NON_CORPORATE_TLD_SUFFIXES):
+        logger.debug("Ticari olmayan alan adı uzantısı elendi: url=%s (host=%s)", url, host)
+        return True
+
     # URL yolunun (path) ikili bir dosya (.pdf, .zip vb.) olup olmadığını kontrol et
     try:
         parsed_path = urlparse(url if "://" in url else f"https://{url}").path.lower()
@@ -268,14 +364,27 @@ class DomainFilter:
         blacklisted_domains: Sequence[str] | None = None,
         blacklisted_title_patterns: Sequence[str] | None = None,
     ) -> None:
-        self.blacklisted_domains = list(
-            blacklisted_domains if blacklisted_domains is not None else DEFAULT_BLACKLISTED_DOMAINS
-        )
-        self.blacklisted_title_patterns = list(
-            blacklisted_title_patterns
-            if blacklisted_title_patterns is not None
-            else DEFAULT_BLACKLISTED_TITLE_PATTERNS
-        )
+        # Özel domain listesi verilse dahi varsayılan koruma listesiyle (DEFAULT_BLACKLISTED_DOMAINS)
+        # birleştirilir (union) ki github.com, ros.org vb. siteler yanlışlıkla koruma dışı kalmasın.
+        merged_domains: list[str] = list(DEFAULT_BLACKLISTED_DOMAINS)
+        if blacklisted_domains is not None:
+            seen_doms = {d.lower() for d in merged_domains}
+            for item in blacklisted_domains:
+                clean_item = str(item).strip().lower()
+                if clean_item and clean_item not in seen_doms:
+                    seen_doms.add(clean_item)
+                    merged_domains.append(clean_item)
+        self.blacklisted_domains = merged_domains
+
+        merged_patterns: list[str] = list(DEFAULT_BLACKLISTED_TITLE_PATTERNS)
+        if blacklisted_title_patterns is not None:
+            seen_pats = {p.lower() for p in merged_patterns}
+            for pat in blacklisted_title_patterns:
+                clean_pat = str(pat).strip()
+                if clean_pat and clean_pat.lower() not in seen_pats:
+                    seen_pats.add(clean_pat.lower())
+                    merged_patterns.append(clean_pat)
+        self.blacklisted_title_patterns = merged_patterns
 
     def is_valid_candidate(self, item: SearchResultItem) -> bool:
         """Tek bir arama sonucunun gerçek bir şirket adayı olup olmadığını doğrular."""

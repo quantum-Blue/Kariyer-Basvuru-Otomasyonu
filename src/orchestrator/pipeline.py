@@ -40,7 +40,7 @@ from src.rag.vector_store import VectorStoreManager
 from src.scraper.domain_filter import DomainFilter
 from src.scraper.email_extractor import EmailExtractor
 from src.scraper.page_fetcher import PlaywrightPageFetcher
-from src.scraper.query_builder import build_dork_queries
+from src.scraper.query_builder import DEFAULT_DORK_EXCLUDED_DOMAINS, build_dork_queries
 from src.scraper.rate_limiter import RateLimiter
 from src.scraper.search_engine import SearchEngineClient
 from src.utils.logger import get_logger
@@ -163,9 +163,41 @@ class AutonomousPipeline:
             email_extractor=email_extractor,
         )
         candidate_links = CandidateLinks.from_env_config(settings.env)
+
+        # Eğer dışarıdan vector_store verilmemişse ve diskte daha önce '--ingest-pdfs' ile
+        # oluşturulmuş ChromaDB dizini mevcutsa, otomatik olarak bağla:
+        resolved_vector_store = vector_store
+        if resolved_vector_store is None:
+            from pathlib import Path
+
+            chroma_dir = Path(settings.rag.chroma_persist_dir)
+            if chroma_dir.exists() and any(chroma_dir.iterdir()):
+                try:
+                    from src.rag.embedder import MultilingualEmbedder
+
+                    embedder = MultilingualEmbedder.get_instance(
+                        model_name=settings.rag.embedding_model
+                    )
+                    store_candidate = VectorStoreManager(
+                        persist_directory=settings.rag.chroma_persist_dir,
+                        collection_name=settings.rag.collection_name,
+                        embedder=embedder,
+                    )
+                    if store_candidate.count() > 0:
+                        resolved_vector_store = store_candidate
+                        logger.info(
+                            "Diskteki mevcut ChromaDB koleksiyonu yüklendi (%d metin parçası).",
+                            store_candidate.count(),
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Diskteki ChromaDB koleksiyonu yüklenemedi, statik özetle devam edilecek: %s",
+                        exc,
+                    )
+
         prompt_builder = PromptBuilder(
             links=candidate_links,
-            vector_store=vector_store,
+            vector_store=resolved_vector_store,
             top_k=settings.rag.top_k,
             min_word_count=settings.generator.min_word_count,
             max_word_count=settings.generator.max_word_count,
@@ -186,6 +218,10 @@ class AutonomousPipeline:
             max_delay_sec=settings.mailer.max_delay_sec,
         )
 
+        # Dork sorgusunda arama motorunun URL/token limitini aşmamak için en kritik
+        # 8 rehber sitesi kullanılır; geri kalan 60+ domain DomainFilter katmanında elenir.
+        dork_exclusions = list(DEFAULT_DORK_EXCLUDED_DOMAINS)
+
         return cls(
             db_manager=db_manager,
             search_client=search_client,
@@ -195,7 +231,7 @@ class AutonomousPipeline:
             prompt_builder=prompt_builder,
             llm_client=llm_client,
             email_sender=email_sender,
-            excluded_dork_domains=settings.scraper.blacklisted_domains,
+            excluded_dork_domains=dork_exclusions,
         )
 
     async def run_async(

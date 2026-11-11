@@ -16,12 +16,53 @@ Bu modülün amacı:
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import re
 from typing import Any
+from urllib.parse import quote_plus, unquote
+import warnings
+
+from bs4 import BeautifulSoup
 
 from src.utils.logger import get_logger
 
+# duckduckgo_search paketinin yeniden adlandırma uyarısının terminali kirletmesini önle
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
 logger = get_logger(__name__)
+
+# Kısa kısaltma aramalarında ("ROS 2", "SLAM" vb.) alakasız oyun/vergi sitelerini
+# önlemek için sorguda bulunması beklenen sektör bağlam kelimeleri
+_SECTOR_ANCHOR_TERMS: tuple[str, ...] = (
+    "robotik",
+    "robotics",
+    "otonom",
+    "autonomous",
+    "teknoloji",
+    "yazılım",
+    "mühendislik",
+    "savunma",
+    "iha",
+    "amr",
+)
+
+# Arama motorunun anti-bot zehirlemesi (SERP poisoning: alakasız yemek/oyun/forum sonuçları)
+# döndürüp döndürmediğini doğrulamak için sonuçlarda aranan Türkçe/sektörel anahtar kelimeler
+_RELEVANCE_CHECK_TOKENS: tuple[str, ...] = (
+    "robot",
+    "otonom",
+    "slam",
+    "amr",
+    "agv",
+    "lidar",
+    "iha",
+    "insansız",
+    "otomasyon",
+    "görüntü",
+    "autonomous",
+    "robotics",
+)
 
 
 @dataclass(frozen=True)
@@ -34,13 +75,156 @@ class SearchResultItem:
     query: str = ""   # Bu sonucu bulmak için kullanılan Dork sorgusu
 
 
-def _default_ddg_search_backend(query: str, max_results: int) -> list[dict[str, Any]]:
-    """Gerçek çalışma zamanında `duckduckgo_search.DDGS` kütüphanesini çağırır."""
-    from duckduckgo_search import DDGS
+def _adapt_dork_for_ddg_live(query: str) -> str:
+    """Üretilen Dork sorgusunu canlı arama motoru için optimize eder."""
+    # 1. '-site:...' operatörlerini ve çift tırnakları temizle
+    without_sites = re.sub(r"-site:\S+", "", query, flags=re.IGNORECASE)
+    cleaned = without_sites.replace('"', " ")
+    cleaned = re.sub(r"\bkariyer\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = " ".join(cleaned.split()).strip()
 
-    with DDGS() as ddgs:
-        raw_results = ddgs.text(query, max_results=max_results)
-        return list(raw_results) if raw_results else []
+    if not cleaned:
+        return query.strip()
+
+    lowered = cleaned.lower()
+    # 'ROS 2' aramalarında İngilizce dokümantasyon (ros.org) ve oyun (Rules of Survival)
+    # siteleri yerine Türkiye'deki otonom mobil robot (AMR) / ROS şirketlerini hedefle
+    if "ros 2" in lowered or "ros2" in lowered or lowered.startswith("ros "):
+        return "ROS 2 otonom mobil robot teknoloji şirketi Türkiye"
+
+    if not any(term in lowered for term in _SECTOR_ANCHOR_TERMS):
+        cleaned = f"{cleaned} otonom robotik teknoloji şirketi"
+
+    return cleaned
+
+
+def _is_relevant_robotics_serp(items: Sequence[dict[str, Any]]) -> bool:
+    """Dönen arama sonuçlarının gerçek robotik/otonom sistem sonuçları olup olmadığını
+    (anti-bot SERP zehirlemesi veya sadece İngilizce ros.org dokümantasyonu olmadığını) doğrular.
+    """
+    if not items:
+        return False
+
+    relevant_hits = 0
+    for item in items:
+        text_blob = f"{item.get('title', '')} {item.get('body', '')}".lower()
+        href = str(item.get("href", "")).lower()
+        # ros.org, ros.ie, roslegacy.net gibi küresel gürültüleri pozitif sinyal sayma
+        if any(bad in href for bad in ("ros.org", "ros.ie", "roslegacy", "rosinfinity", "rosorigin", "github.com/ros2")):
+            continue
+        if any(tok in text_blob for tok in _RELEVANCE_CHECK_TOKENS):
+            relevant_hits += 1
+
+    return relevant_hits >= 2
+
+
+def _fetch_yahoo_tr_via_playwright(live_query: str, max_results: int) -> list[dict[str, Any]]:
+    """DDGS/Bing anti-bot engeline veya SERP zehirlemesine takıldığında gerçek Playwright
+    Chromium tarayıcısıyla `tr.search.yahoo.com` üzerinden temiz sonuçları çeker.
+    """
+    import asyncio
+    from playwright.async_api import async_playwright
+
+    async def _run_browser_search() -> list[dict[str, Any]]:
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                )
+            )
+            page = await context.new_page()
+            try:
+                search_url = f"https://tr.search.yahoo.com/search?p={quote_plus(live_query)}"
+                await page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
+                html_content = await page.content()
+            finally:
+                try:
+                    await page.close()
+                    await context.close()
+                finally:
+                    await browser.close()
+
+        soup = BeautifulSoup(html_content, "html.parser")
+        extracted: list[dict[str, Any]] = []
+        for div in soup.select("div.algo"):
+            anchor = div.find("a", href=True)
+            h3 = div.find("h3")
+            comp_text = div.select_one(".compText")
+            if not anchor or not h3:
+                continue
+
+            raw_href = str(anchor.get("href") or "")
+            # Yahoo yönlendirme linki (/RU=https%3A%2F%2F.../RK=...) varsa gerçek hedef URL'yi çöz
+            ru_match = re.search(r"/RU=([^/]+)/RK=", raw_href)
+            clean_href = unquote(ru_match.group(1)) if ru_match else raw_href
+
+            # Başlıktaki Yahoo breadcrumb önekini ('sirket.com › tr Başlık') temizle
+            raw_title = h3.get_text(" ", strip=True)
+            span_crumb = h3.find("span")
+            if span_crumb:
+                crumb_txt = span_crumb.get_text(" ", strip=True)
+                if crumb_txt and raw_title.startswith(crumb_txt):
+                    raw_title = raw_title[len(crumb_txt):].strip()
+
+            extracted.append(
+                {
+                    "title": raw_title,
+                    "href": clean_href,
+                    "body": comp_text.get_text(" ", strip=True) if comp_text else "",
+                }
+            )
+            if len(extracted) >= max_results:
+                break
+        return extracted
+
+    # Halihazırda çalışan bir asyncio döngüsü içindeysek (AutonomousPipeline.run_async),
+    # ayrı bir iş parçacığında (thread) yeni olay döngüsüyle çalıştır.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(asyncio.run, _run_browser_search())
+        return future.result(timeout=25)
+
+
+def _default_ddg_search_backend(query: str, max_results: int) -> list[dict[str, Any]]:
+    """Gerçek çalışma zamanında önce hızlı `DDGS` istemcisini dener; eğer anti-bot SERP
+    zehirlemesi veya rate-limit tespit edilirse gerçek Playwright Chromium tarayıcısıyla
+    yedek arama motorundan (`tr.search.yahoo.com`) doğrulanmış sonuçları çeker.
+    """
+    live_query = _adapt_dork_for_ddg_live(query)
+
+    # 1. Aşama: Hızlı DDGS araması (max_results=None ile yalnızca 1. sayfa çekilerek
+    #    Bing'in 2. sayfa 'FORM=PERE' anti-bot zehirlemesi önlenir)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        try:
+            from duckduckgo_search import DDGS
+
+            with DDGS() as ddgs:
+                raw_results = ddgs.text(
+                    live_query,
+                    region="tr-tr",
+                    max_results=None,
+                )
+                if raw_results and _is_relevant_robotics_serp(raw_results):
+                    return list(raw_results)[: max(max_results, 10)]
+        except Exception as exc:
+            logger.debug("DDGS birincil arama denemesi başarısız (%s): %s", live_query, exc)
+
+    # 2. Aşama: DDGS alakasız/zehirlenmiş SERP döndürdüyse veya rate-limit yediyse
+    #    Playwright Chromium ile doğrulanmış arama sonuçlarını çek
+    logger.info(
+        "DDGS sonuçları sektörel doğrulamadan geçemedi, Playwright tarayıcı araması devreye giriyor: '%s'",
+        live_query,
+    )
+    try:
+        pw_results = _fetch_yahoo_tr_via_playwright(live_query, max_results=max(max_results, 10))
+        if pw_results:
+            return pw_results
+    except Exception as exc:
+        logger.warning("Playwright yedek arama motoru hatası (%s): %s", live_query, exc)
+
+    return []
 
 
 class SearchEngineClient:
