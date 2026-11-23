@@ -332,11 +332,13 @@ def classify_email_address(
     if local_part in high_set or any(tok in high_set for tok in sub_tokens):
         return EmailTier.HIGH_PRIORITY
 
-    # 6. DÜŞÜK ÖNCELİK (GENEL İLETİŞİM VEYA GEÇERLİ KURUMSAL ADRES)
+    # 6. DÜŞÜK ÖNCELİK (YALNIZCA BEYAZ LİSTEDEKİ GENEL KURUMSAL İLETİŞİM ADRESLERİ: info@, iletisim@, contact@ vb.)
     if local_part in low_set or any(tok in low_set for tok in sub_tokens):
         return EmailTier.LOW_PRIORITY
 
-    return EmailTier.LOW_PRIORITY
+    # Beyaz listedeki İK veya kurumsal iletişim ön eklerinden hiçbirine uymayan rastgele adresleri
+    # (örn. andy@..., vam27invest@..., slam@...) güvenli şekilde reddet:
+    return EmailTier.BLACKLISTED
 
 
 def extract_emails_from_content(

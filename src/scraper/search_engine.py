@@ -92,27 +92,56 @@ def _adapt_dork_for_ddg_live(query: str) -> str:
     if "ros 2" in lowered or "ros2" in lowered or lowered.startswith("ros "):
         return "ROS 2 otonom mobil robot teknoloji şirketi Türkiye"
 
+    # 'SLAM' aramalarında yabancı radyo/giyim markaları (slam.nl, slam.com) yerine
+    # Türkiye'deki otonom robotik ve SLAM teknoloji şirketlerini hedefle
+    if "slam" in lowered:
+        return "SLAM otonom robotik teknoloji şirketi Türkiye"
+
     if not any(term in lowered for term in _SECTOR_ANCHOR_TERMS):
-        cleaned = f"{cleaned} otonom robotik teknoloji şirketi"
+        cleaned = f"{cleaned} otonom robotik teknoloji şirketi Türkiye"
 
     return cleaned
 
 
 def _is_relevant_robotics_serp(items: Sequence[dict[str, Any]]) -> bool:
-    """Dönen arama sonuçlarının gerçek robotik/otonom sistem sonuçları olup olmadığını
-    (anti-bot SERP zehirlemesi veya sadece İngilizce ros.org dokümantasyonu olmadığını) doğrular.
+    """Dönen arama sonuçlarının gerçek Türkçe robotik/otonom sistem sonuçları olup olmadığını
+    (anti-bot SERP zehirlemesi veya yabancı/alakasız SLAM/ROS siteleri olmadığını) doğrular.
     """
     if not items:
         return False
+
+    # Tek başına 'slam' veya 'ros' kelimesi yabancı radyo/oyun sitelerinde de geçtiği için,
+    # sonuçlarda mutlaka gerçek Türkçe robotik/otonom sistem terimlerinden biri aranır:
+    strict_turkish_robotics_tokens = (
+        "robotik",
+        "otonom",
+        "mobil robot",
+        "otomasyon",
+        "insansız",
+        "mühendislik",
+        "teknoloji",
+    )
 
     relevant_hits = 0
     for item in items:
         text_blob = f"{item.get('title', '')} {item.get('body', '')}".lower()
         href = str(item.get("href", "")).lower()
-        # ros.org, ros.ie, roslegacy.net gibi küresel gürültüleri pozitif sinyal sayma
-        if any(bad in href for bad in ("ros.org", "ros.ie", "roslegacy", "rosinfinity", "rosorigin", "github.com/ros2")):
+        if any(
+            bad in href
+            for bad in (
+                "ros.org",
+                "ros.ie",
+                "roslegacy",
+                "rosinfinity",
+                "rosorigin",
+                "github.com/ros2",
+                "slam.nl",
+                "flankers.net",
+                "mathworks.com",
+            )
+        ):
             continue
-        if any(tok in text_blob for tok in _RELEVANCE_CHECK_TOKENS):
+        if any(tok in text_blob for tok in strict_turkish_robotics_tokens):
             relevant_hits += 1
 
     return relevant_hits >= 2
@@ -187,14 +216,22 @@ def _fetch_yahoo_tr_via_playwright(live_query: str, max_results: int) -> list[di
 
 
 def _default_ddg_search_backend(query: str, max_results: int) -> list[dict[str, Any]]:
-    """Gerçek çalışma zamanında önce hızlı `DDGS` istemcisini dener; eğer anti-bot SERP
-    zehirlemesi veya rate-limit tespit edilirse gerçek Playwright Chromium tarayıcısıyla
-    yedek arama motorundan (`tr.search.yahoo.com`) doğrulanmış sonuçları çeker.
+    """Gerçek çalışma zamanında birincil olarak gerçek Playwright Chromium tarayıcısıyla
+    (`tr.search.yahoo.com`) anti-bot zehirlemesiz Türkçe arama sonuçlarını çeker;
+    tarayıcı araması başarısız olursa yedek olarak `DDGS` istemcisini sektörel doğrulamayla dener.
     """
     live_query = _adapt_dork_for_ddg_live(query)
 
-    # 1. Aşama: Hızlı DDGS araması (max_results=None ile yalnızca 1. sayfa çekilerek
-    #    Bing'in 2. sayfa 'FORM=PERE' anti-bot zehirlemesi önlenir)
+    # 1. Aşama (Birincil): Gerçek Playwright Chromium tarayıcısı üzerinden arama
+    #    (DDGS/primp'in kelime kırpma ve yabancı SERP zehirlemesi sorunlarını %100 önler)
+    try:
+        pw_results = _fetch_yahoo_tr_via_playwright(live_query, max_results=max(max_results, 10))
+        if pw_results and _is_relevant_robotics_serp(pw_results):
+            return pw_results
+    except Exception as exc:
+        logger.debug("Playwright birincil arama denemesi başarısız (%s): %s", live_query, exc)
+
+    # 2. Aşama (Yedek): Hızlı DDGS araması (yalnızca sıkı Türkçe sektörel doğrulamadan geçerse kabul edilir)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
@@ -209,20 +246,7 @@ def _default_ddg_search_backend(query: str, max_results: int) -> list[dict[str, 
                 if raw_results and _is_relevant_robotics_serp(raw_results):
                     return list(raw_results)[: max(max_results, 10)]
         except Exception as exc:
-            logger.debug("DDGS birincil arama denemesi başarısız (%s): %s", live_query, exc)
-
-    # 2. Aşama: DDGS alakasız/zehirlenmiş SERP döndürdüyse veya rate-limit yediyse
-    #    Playwright Chromium ile doğrulanmış arama sonuçlarını çek
-    logger.info(
-        "DDGS sonuçları sektörel doğrulamadan geçemedi, Playwright tarayıcı araması devreye giriyor: '%s'",
-        live_query,
-    )
-    try:
-        pw_results = _fetch_yahoo_tr_via_playwright(live_query, max_results=max(max_results, 10))
-        if pw_results:
-            return pw_results
-    except Exception as exc:
-        logger.warning("Playwright yedek arama motoru hatası (%s): %s", live_query, exc)
+            logger.warning("Yedek DDGS arama motoru hatası (%s): %s", live_query, exc)
 
     return []
 
