@@ -675,7 +675,9 @@ class TestMilestone2EndToEndDiscoveryAndExtraction:
         """
         project_root = Path(__file__).resolve().parent.parent.parent
         real_tr_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_TR.pdf"
-        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
+        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo_TR.pdf"
+        if not real_portfolio.exists():
+            real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
 
         if not (real_tr_cv.exists() and real_portfolio.exists()):
             pytest.skip("Gerçek CV/Portfolyo PDF dosyaları bulunamadı.")
