@@ -281,10 +281,19 @@ class PromptBuilder:
                 else "ROS 2 SLAM autonomous UAV AUV robotics computer vision"
             )
             try:
-                resolved_rag = self.vector_store.query(
-                    query_text=query_seed,
-                    top_k=self.top_k,
-                )
+                try:
+                    resolved_rag = self.vector_store.query(
+                        query_text=query_seed,
+                        top_k=self.top_k,
+                        language=lang,
+                    )
+                except TypeError:
+                    resolved_rag = []
+                if not resolved_rag:
+                    resolved_rag = self.vector_store.query(
+                        query_text=query_seed,
+                        top_k=self.top_k,
+                    )
             except Exception as exc:
                 logger.warning("RAG sorgusu sırasında hata oluştu, varsayılan yetkinlik özeti kullanılacak: %s", exc)
                 resolved_rag = []

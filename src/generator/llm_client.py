@@ -174,20 +174,29 @@ def validate_generated_email_body(
     )
 
 
-def _default_gemini_rest_backend(
+# Google AI Studio'nun yeni API anahtarlarında 'gemini-2.5-flash' modelini HTTP 404 ile
+# kullanımdan kaldırmasına ve anlık 503 yoğunluklarına karşı otomatik model zinciri:
+_GEMINI_FALLBACK_MODELS: tuple[str, ...] = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-2.5-flash",
+)
+
+
+def _call_single_gemini_model(
     system_instruction: str,
     user_prompt: str,
-    model_name: str,
+    target_model: str,
     temperature: float,
     api_key: str,
-    timeout_sec: float = 25.0,
+    timeout_sec: float,
 ) -> str:
-    """Harici ağır SDK bağımlılığı gerektirmeden Google Gemini REST API (`generateContent`)
-    üzerinden doğrudan üretim yapan varsayılan istemci fonksiyonu.
-    """
+    """Belirtilen tekil Gemini modeline REST API (`generateContent`) isteği gönderir."""
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model_name}:generateContent?key={api_key}"
+        f"{target_model}:generateContent?key={api_key}"
     )
     payload = {
         "system_instruction": {
@@ -216,11 +225,55 @@ def _default_gemini_rest_backend(
 
     candidates = parsed.get("candidates") or []
     if not candidates:
-        raise RuntimeError("Gemini API yanıtında 'candidates' alanı boş döndü.")
+        raise RuntimeError(f"Gemini API ({target_model}) yanıtında 'candidates' alanı boş döndü.")
 
     parts = candidates[0].get("content", {}).get("parts") or []
     text_chunks = [str(p.get("text", "")) for p in parts if isinstance(p, dict)]
     return "\n".join(text_chunks).strip()
+
+
+def _default_gemini_rest_backend(
+    system_instruction: str,
+    user_prompt: str,
+    model_name: str,
+    temperature: float,
+    api_key: str,
+    timeout_sec: float = 15.0,
+) -> str:
+    """Harici ağır SDK bağımlılığı gerektirmeden Google Gemini REST API (`generateContent`)
+    üzerinden doğrudan üretim yapan varsayılan istemci fonksiyonu.
+
+    Eğer yapılandırılan model (`gemini-2.5-flash`) yeni Google AI Studio anahtarlarında
+    HTTP 404 döndürürse veya anlık 503/timeout yaşanırsa otomatik olarak aktif
+    `gemini-3.5-flash-lite` model zincirini dener.
+    """
+    clean_model = (model_name or "").strip().removeprefix("models/")
+    # Yeni API anahtarlarında gemini-2.5-flash 404 döndürdüğü için 3.5-flash-lite önceliklendirilir
+    if clean_model in ("", "gemini-2.5-flash"):
+        candidate_models = list(_GEMINI_FALLBACK_MODELS)
+    else:
+        candidate_models = [clean_model] + [
+            m for m in _GEMINI_FALLBACK_MODELS if m != clean_model
+        ]
+
+    last_exc: Exception | None = None
+    for candidate in candidate_models:
+        try:
+            return _call_single_gemini_model(
+                system_instruction=system_instruction,
+                user_prompt=user_prompt,
+                target_model=candidate,
+                temperature=temperature,
+                api_key=api_key,
+                timeout_sec=timeout_sec,
+            )
+        except Exception as exc:
+            last_exc = exc
+            logger.debug("Gemini model denemesi başarısız (%s): %s", candidate, exc)
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Hiçbir Gemini modeli yanıt vermedi.")
 
 
 class GeminiLLMClient:

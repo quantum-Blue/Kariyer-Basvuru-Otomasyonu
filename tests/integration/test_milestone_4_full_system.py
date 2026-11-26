@@ -89,7 +89,10 @@ class TestMilestone4FinalSystemAuditAndDryRun:
         # 1. PDF Belgelerini Oku ve ChromaDB Vektör Veritabanına Kaydet
         real_tr_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_TR.pdf"
         real_en_cv = project_root / "cv" / "Muhammed_Enes_BAL_CV_EN.pdf"
-        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
+        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo_TR.pdf"
+        if not real_portfolio.exists():
+            real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
+        real_portfolio_en = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolio_EN.pdf"
 
         if real_tr_cv.exists() and real_en_cv.exists() and real_portfolio.exists():
             docs = [
@@ -97,6 +100,8 @@ class TestMilestone4FinalSystemAuditAndDryRun:
                 extract_text_from_pdf(real_en_cv),
                 extract_text_from_pdf(real_portfolio),
             ]
+            if real_portfolio_en.exists():
+                docs.append(extract_text_from_pdf(real_portfolio_en))
         else:
             pdf_dir = tmp_path / "fallback_pdfs"
             pdf_dir.mkdir(parents=True, exist_ok=True)

@@ -314,7 +314,10 @@ class TestMilestone1EndToEndRAG:
         real_en_cv = project_root / "cv" / "Muhammed_Enes_BAL_CV_EN.pdf"
         if not real_en_cv.exists():
             real_en_cv = project_root / "cv" / "01_Muhammed_Enes_BAL_CV_EN_1.pdf"
-        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
+        real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo_TR.pdf"
+        if not real_portfolio.exists():
+            real_portfolio = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolyo.pdf"
+        real_portfolio_en = project_root / "portfolio" / "01_Muhammed_Enes_BAL_Portfolio_EN.pdf"
 
         if not (real_tr_cv.exists() and real_en_cv.exists() and real_portfolio.exists()):
             pytest.skip("Gerçek CV/Portfolyo PDF dosyaları dizinde bulunamadı.")
@@ -323,6 +326,11 @@ class TestMilestone1EndToEndRAG:
         doc_tr = extract_text_from_pdf(real_tr_cv)
         doc_en = extract_text_from_pdf(real_en_cv)
         doc_port = extract_text_from_pdf(real_portfolio)
+        chunks_port_en = (
+            chunk_pdf_document(extract_text_from_pdf(real_portfolio_en), chunk_size=600, chunk_overlap=100)
+            if real_portfolio_en.exists()
+            else []
+        )
 
         assert doc_tr.page_count >= 1
         assert doc_en.page_count >= 1
@@ -354,7 +362,7 @@ class TestMilestone1EndToEndRAG:
             embedder=embedder,
         )
 
-        all_real_chunks = chunks_tr + chunks_en + chunks_port
+        all_real_chunks = chunks_tr + chunks_en + chunks_port + chunks_port_en
         inserted_count = store.upsert_chunks(all_real_chunks)
         assert inserted_count == store.count()
         assert inserted_count >= 35
